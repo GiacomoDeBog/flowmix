@@ -832,10 +832,14 @@ async function spotifyFetch(endpoint, { silent = false } = {}) {
   try { body = await res.json(); } catch {}
   if (!res.ok) {
     if (res.status === 403) {
-      // 403 on tracks endpoint = force re-auth
-      sessionStorage.removeItem('spotify_token');
-      showToast(`Accesso negato (403): ${body?.error?.message || 'rieffettua il login'}`, 5000);
-      setTimeout(showLoginScreen, 1500);
+      // 403 = permissions issue, NOT a token issue — do NOT clear the token
+      // Likely cause: Spotify app in Development Mode, user not added to User Management
+      if (!silent) {
+        showToast(
+          '⚠️ Spotify 403: vai su developer.spotify.com → la tua app → Settings → User Management → aggiungi la tua email Spotify.',
+          8000
+        );
+      }
       return null;
     }
     if (!silent) showToast(`Spotify API error: ${res.status} — ${body?.error?.message || ''}`);
@@ -991,7 +995,12 @@ async function loadPlaylist(playlistId, playlistName) {
   let url = `/playlists/${playlistId}/tracks?limit=100&fields=next,items(track(id,name,artists,album,duration_ms))`;
   while (url) {
     const data = await spotifyFetch(url);
-    if (!data || !data.items) { showPlaylistScreen(); return; }
+    if (!data) {
+      // null = request failed (403/401/network) — toast already shown by spotifyFetch
+      showPlaylistScreen();
+      return;
+    }
+    if (!data.items) { showPlaylistScreen(); return; }
     const valid = data.items.filter(i => i && i.track && i.track.id);
     tracks = tracks.concat(valid.map(i => i.track));
     url = data.next ? data.next.replace('https://api.spotify.com/v1', '') : null;
