@@ -815,7 +815,7 @@ async function loadPlaylists() {
   let url = '/me/playlists?limit=50';
   while (url) {
     const data = await spotifyFetch(url.startsWith('/') ? url : url.replace('https://api.spotify.com/v1', ''));
-    if (!data) return;
+    if (!data) { showLoginScreen(); return; }
     allPlaylists = allPlaylists.concat(data.items);
     url = data.next ? data.next.replace('https://api.spotify.com/v1', '') : null;
   }
@@ -848,7 +848,7 @@ async function loadPlaylist(playlistId, playlistName) {
   let url = `/playlists/${playlistId}/tracks?limit=100&fields=next,items(track(id,name,artists,album,duration_ms))`;
   while (url) {
     const data = await spotifyFetch(url);
-    if (!data || !data.items) return;
+    if (!data || !data.items) { showPlaylistScreen(); return; }
     const valid = data.items.filter(i => i && i.track && i.track.id);
     tracks = tracks.concat(valid.map(i => i.track));
     url = data.next ? data.next.replace('https://api.spotify.com/v1', '') : null;
