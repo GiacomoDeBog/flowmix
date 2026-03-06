@@ -736,7 +736,7 @@ async function exchangeCode(code) {
   }
 }
 
-async function spotifyFetch(endpoint) {
+async function spotifyFetch(endpoint, { silent = false } = {}) {
   let res;
   try {
     res = await fetch(`https://api.spotify.com/v1${endpoint}`, {
@@ -757,14 +757,14 @@ async function spotifyFetch(endpoint) {
     return null;
   }
   if (!res.ok) {
-    showToast(`Spotify API error: ${res.status}`);
+    if (!silent) showToast(`Spotify API error: ${res.status}`);
     return null;
   }
   if (res.status === 204) return null;
   try {
     return await res.json();
   } catch {
-    showToast('Unexpected response from Spotify.');
+    if (!silent) showToast('Unexpected response from Spotify.');
     return null;
   }
 }
@@ -864,12 +864,24 @@ async function loadPlaylist(playlistId, playlistName) {
   // Fetch audio features in batches of 100
   const ids = tracks.map(t => t.id);
   const features = new Array(ids.length).fill(null);
+  let audioFeaturesAvailable = true;
   for (let i = 0; i < ids.length; i += 100) {
     const batch = ids.slice(i, i + 100).join(',');
-    const data = await spotifyFetch(`/audio-features?ids=${batch}`);
+    const data = await spotifyFetch(`/audio-features?ids=${batch}`, { silent: true });
+    if (data === null && i === 0) {
+      // First batch failed — audio features not available (likely Spotify API deprecation)
+      audioFeaturesAvailable = false;
+      break;
+    }
     if (data?.audio_features) {
       data.audio_features.forEach((f, j) => { features[i + j] = f; });
     }
+  }
+
+  if (!audioFeaturesAvailable) {
+    showToast('⚠️ Spotify ha revocato l\'accesso alle audio features (BPM/chiave). Richiedi Extended Quota Mode nel Spotify Developer Dashboard.', 6000);
+    showPlaylistScreen();
+    return;
   }
 
   // Merge
