@@ -820,8 +820,8 @@ async function loadPlaylist(playlistId, playlistName) {
   let url = `/playlists/${playlistId}/tracks?limit=100&fields=next,items(track(id,name,artists,album,duration_ms))`;
   while (url) {
     const data = await spotifyFetch(url);
-    if (!data) return;
-    const valid = data.items.filter(i => i.track && i.track.id);
+    if (!data || !data.items) return;
+    const valid = data.items.filter(i => i && i.track && i.track.id);
     tracks = tracks.concat(valid.map(i => i.track));
     url = data.next ? data.next.replace('https://api.spotify.com/v1', '') : null;
   }
