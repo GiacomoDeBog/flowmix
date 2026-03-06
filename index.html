@@ -619,7 +619,7 @@
 <script>
 // ── CONFIG ──
 const CLIENT_ID = '306579cf1e994a2aa83a71588739dc48';
-const REDIRECT_URI = window.location.origin + window.location.pathname;
+const REDIRECT_URI = 'https://giacomodebog.github.io/flowmix/';
 const SCOPES = 'playlist-read-private playlist-read-collaborative user-library-read';
 const BPM_RANGE = 25;
 
@@ -793,15 +793,16 @@ async function loadPlaylists() {
   }
 
   list.innerHTML = '';
-  allPlaylists.forEach(pl => {
+  allPlaylists.filter(pl => pl && pl.id).forEach(pl => {
     const img = pl.images?.[0]?.url || '';
+    const trackCount = pl.tracks?.total ?? '?';
     const div = document.createElement('div');
     div.className = 'playlist-item';
     div.innerHTML = `
       ${img ? `<img class="playlist-img" src="${img}" alt="">` : '<div class="playlist-img"></div>'}
       <div class="playlist-info">
         <div class="playlist-name">${pl.name}</div>
-        <div class="playlist-tracks">${pl.tracks.total} tracks</div>
+        <div class="playlist-tracks">${trackCount} tracks</div>
       </div>
       <div class="playlist-arrow">→</div>
     `;
