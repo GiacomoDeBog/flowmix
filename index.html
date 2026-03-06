@@ -521,6 +521,63 @@
     line-height: 1.8;
   }
 
+  /* ── API KEY SECTION ── */
+  .apikey-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .apikey-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+  }
+  .apikey-row { display: flex; gap: 0.5rem; }
+  .apikey-input {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .apikey-input:focus { border-color: var(--accent); }
+  .apikey-save {
+    background: var(--accent);
+    color: #080a0f;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .apikey-save:hover { opacity: 0.85; }
+  .apikey-hint {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    color: var(--muted);
+    margin-top: 0.4rem;
+    line-height: 1.6;
+  }
+  .apikey-hint a { color: var(--accent); text-decoration: none; }
+  .apikey-status {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    margin-top: 0.4rem;
+  }
+  .apikey-status.ok { color: var(--accent); }
+  .apikey-status.warn { color: var(--accent3); }
+
   /* scrollbar hide for playlist */
   ::-webkit-scrollbar { width: 0; }
 </style>
@@ -549,6 +606,18 @@
     <div class="playlist-title">Choose a Playlist</div>
     <div class="playlist-sub">Select the playlist to explore</div>
     <div class="playlist-list" id="playlist-list"></div>
+    <div class="apikey-section">
+      <div class="apikey-label">⚙ GetSongBPM API Key</div>
+      <div class="apikey-row">
+        <input class="apikey-input" id="gsbpm-input" type="password" placeholder="Incolla la tua API key...">
+        <button class="apikey-save" onclick="saveGsbpmKey()">Salva</button>
+      </div>
+      <div class="apikey-hint">
+        Necessaria perché Spotify ha deprecato l'endpoint audio features.<br>
+        <a href="https://getsongbpm.com/api" target="_blank">Ottieni una key gratuita su getsongbpm.com →</a>
+      </div>
+      <div class="apikey-status" id="gsbpm-status"></div>
+    </div>
   </div>
 </div>
 
@@ -769,6 +838,72 @@ async function spotifyFetch(endpoint, { silent = false } = {}) {
   }
 }
 
+// ── GETSONGBPM INTEGRATION ──
+// Reverse map: "C Major" / "Db Major" → Camelot
+const KEY_NAME_TO_CAMELOT = {};
+Object.entries(KEY_NAMES).forEach(([km, name]) => {
+  KEY_NAME_TO_CAMELOT[name] = CAMELOT[km];
+  KEY_NAME_TO_CAMELOT[name.replace(/♭/g, 'b')] = CAMELOT[km]; // "Db Major" etc.
+});
+
+function keyNameToCamelot(keyName) {
+  if (!keyName) return null;
+  return KEY_NAME_TO_CAMELOT[keyName] || null;
+}
+
+const BPM_CACHE_KEY = 'flowmix_bpm_cache';
+function getBpmCache() {
+  try { return JSON.parse(localStorage.getItem(BPM_CACHE_KEY) || '{}'); } catch { return {}; }
+}
+function setBpmCache(cache) {
+  try { localStorage.setItem(BPM_CACHE_KEY, JSON.stringify(cache)); } catch {}
+}
+
+async function fetchTrackBpm(track, apiKey) {
+  const cache = getBpmCache();
+  if (cache[track.id]) return cache[track.id];
+
+  const artist = track.artists?.[0]?.name || '';
+  const lookup = encodeURIComponent(`song:${track.name} artist:${artist}`);
+  try {
+    const res = await fetch(`https://api.getsongbpm.com/search/?api_key=${encodeURIComponent(apiKey)}&type=song&lookup=${lookup}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const song = data.search?.[0];
+    if (!song) return null;
+    const result = {
+      bpm: song.tempo ? Math.round(parseFloat(song.tempo)) : null,
+      camelot: keyNameToCamelot(song.key_of),
+      keyName: song.key_of || 'Unknown'
+    };
+    cache[track.id] = result;
+    setBpmCache(cache);
+    return result;
+  } catch { return null; }
+}
+
+function saveGsbpmKey() {
+  const key = document.getElementById('gsbpm-input').value.trim();
+  if (!key) return;
+  localStorage.setItem('gsbpm_key', key);
+  updateGsbpmStatus();
+  showToast('API key salvata!');
+}
+
+function updateGsbpmStatus() {
+  const key = localStorage.getItem('gsbpm_key');
+  const el = document.getElementById('gsbpm-status');
+  if (!el) return;
+  if (key) {
+    el.textContent = '✓ Key presente — verrà usata al posto di Spotify audio features';
+    el.className = 'apikey-status ok';
+    document.getElementById('gsbpm-input').value = key;
+  } else {
+    el.textContent = '⚠ Senza key le playlist non si caricano (Spotify API 403)';
+    el.className = 'apikey-status warn';
+  }
+}
+
 // ── SCREENS ──
 function showLoginScreen() {
   document.getElementById('login-screen').style.display = 'flex';
@@ -782,6 +917,7 @@ function showPlaylistScreen() {
   document.getElementById('playlist-screen').style.display = 'flex';
   document.getElementById('loading-screen').style.display = 'none';
   document.getElementById('app-screen').style.display = 'none';
+  updateGsbpmStatus();
   loadPlaylists();
 }
 
@@ -861,45 +997,66 @@ async function loadPlaylist(playlistId, playlistName) {
 
   document.getElementById('loading-text').textContent = `Analyzing ${tracks.length} tracks...`;
 
-  // Fetch audio features in batches of 100
-  const ids = tracks.map(t => t.id);
-  const features = new Array(ids.length).fill(null);
-  let audioFeaturesAvailable = true;
-  for (let i = 0; i < ids.length; i += 100) {
-    const batch = ids.slice(i, i + 100).join(',');
-    const data = await spotifyFetch(`/audio-features?ids=${batch}`, { silent: true });
-    if (data === null && i === 0) {
-      // First batch failed — audio features not available (likely Spotify API deprecation)
-      audioFeaturesAvailable = false;
-      break;
-    }
-    if (data?.audio_features) {
-      data.audio_features.forEach((f, j) => { features[i + j] = f; });
-    }
-  }
+  const gsbpmKey = localStorage.getItem('gsbpm_key');
 
-  if (!audioFeaturesAvailable) {
-    showToast('⚠️ Spotify ha revocato l\'accesso alle audio features (BPM/chiave). Richiedi Extended Quota Mode nel Spotify Developer Dashboard.', 6000);
-    showPlaylistScreen();
-    return;
+  if (gsbpmKey) {
+    // ── PATH A: GetSongBPM (Spotify audio-features deprecated) ──
+    const cache = getBpmCache();
+    const uncached = tracks.filter(t => !cache[t.id]);
+    for (let i = 0; i < uncached.length; i++) {
+      document.getElementById('loading-text').textContent =
+        `GetSongBPM: ${i + 1}/${uncached.length} tracce...`;
+      await fetchTrackBpm(uncached[i], gsbpmKey);
+    }
+    const fresh = getBpmCache();
+    songs = tracks.map(track => {
+      const r = fresh[track.id];
+      if (!r || !r.bpm || !r.camelot) return null;
+      return {
+        id: track.id,
+        title: track.name,
+        artist: track.artists.map(a => a.name).join(', '),
+        art: track.album?.images?.[2]?.url || track.album?.images?.[0]?.url || '',
+        bpm: r.bpm,
+        key: -1, mode: 1,
+        camelot: r.camelot,
+        keyName: r.keyName,
+      };
+    }).filter(Boolean);
+  } else {
+    // ── PATH B: Spotify audio-features ──
+    const ids = tracks.map(t => t.id);
+    const features = new Array(ids.length).fill(null);
+    let spotifyOk = true;
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100).join(',');
+      const data = await spotifyFetch(`/audio-features?ids=${batch}`, { silent: true });
+      if (data === null && i === 0) { spotifyOk = false; break; }
+      if (data?.audio_features) {
+        data.audio_features.forEach((f, j) => { features[i + j] = f; });
+      }
+    }
+    if (!spotifyOk) {
+      showToast('Spotify API 403: aggiungi una GetSongBPM API key nelle impostazioni.', 5000);
+      showPlaylistScreen();
+      return;
+    }
+    songs = tracks.map((track, i) => {
+      const feat = features[i] || {};
+      const camelot = getCamelot(feat.key ?? -1, feat.mode ?? 1);
+      return {
+        id: track.id,
+        title: track.name,
+        artist: track.artists.map(a => a.name).join(', '),
+        art: track.album?.images?.[2]?.url || track.album?.images?.[0]?.url || '',
+        bpm: feat.tempo ? Math.round(feat.tempo) : null,
+        key: feat.key ?? -1,
+        mode: feat.mode ?? 1,
+        camelot,
+        keyName: getKeyName(feat.key ?? -1, feat.mode ?? 1),
+      };
+    }).filter(s => s.bpm !== null && s.camelot !== null);
   }
-
-  // Merge
-  songs = tracks.map((track, i) => {
-    const feat = features[i] || {};
-    const camelot = getCamelot(feat.key ?? -1, feat.mode ?? 1);
-    return {
-      id: track.id,
-      title: track.name,
-      artist: track.artists.map(a => a.name).join(', '),
-      art: track.album?.images?.[2]?.url || track.album?.images?.[0]?.url || '',
-      bpm: feat.tempo ? Math.round(feat.tempo) : null,
-      key: feat.key ?? -1,
-      mode: feat.mode ?? 1,
-      camelot,
-      keyName: getKeyName(feat.key ?? -1, feat.mode ?? 1),
-    };
-  }).filter(s => s.bpm !== null && s.camelot !== null);
 
   document.getElementById('loading-text').textContent = `Building visualization...`;
   setTimeout(() => { buildWorld(); showApp(); }, 100);
