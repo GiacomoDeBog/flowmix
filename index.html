@@ -617,6 +617,13 @@
 <div id="toast"></div>
 
 <script>
+// ── UTILS ──
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // ── CONFIG ──
 const CLIENT_ID = '306579cf1e994a2aa83a71588739dc48';
 const REDIRECT_URI = 'https://giacomodebog.github.io/flowmix/';
@@ -730,15 +737,36 @@ async function exchangeCode(code) {
 }
 
 async function spotifyFetch(endpoint) {
-  const res = await fetch(`https://api.spotify.com/v1${endpoint}`, {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
+  let res;
+  try {
+    res = await fetch(`https://api.spotify.com/v1${endpoint}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+  } catch {
+    showToast('Network error. Check your connection.');
+    return null;
+  }
   if (res.status === 401) {
     sessionStorage.removeItem('spotify_token');
     showLoginScreen();
     return null;
   }
-  return res.json();
+  if (res.status === 429) {
+    const retryAfter = res.headers.get('Retry-After') || '?';
+    showToast(`Rate limited by Spotify. Retry in ${retryAfter}s`);
+    return null;
+  }
+  if (!res.ok) {
+    showToast(`Spotify API error: ${res.status}`);
+    return null;
+  }
+  if (res.status === 204) return null;
+  try {
+    return await res.json();
+  } catch {
+    showToast('Unexpected response from Spotify.');
+    return null;
+  }
 }
 
 // ── SCREENS ──
@@ -799,10 +827,10 @@ async function loadPlaylists() {
     const div = document.createElement('div');
     div.className = 'playlist-item';
     div.innerHTML = `
-      ${img ? `<img class="playlist-img" src="${img}" alt="">` : '<div class="playlist-img"></div>'}
+      ${img ? `<img class="playlist-img" src="${escapeHtml(img)}" alt="">` : '<div class="playlist-img"></div>'}
       <div class="playlist-info">
-        <div class="playlist-name">${pl.name}</div>
-        <div class="playlist-tracks">${trackCount} tracks</div>
+        <div class="playlist-name">${escapeHtml(pl.name)}</div>
+        <div class="playlist-tracks">${escapeHtml(trackCount)} tracks</div>
       </div>
       <div class="playlist-arrow">→</div>
     `;
@@ -835,11 +863,13 @@ async function loadPlaylist(playlistId, playlistName) {
 
   // Fetch audio features in batches of 100
   const ids = tracks.map(t => t.id);
-  let features = [];
+  const features = new Array(ids.length).fill(null);
   for (let i = 0; i < ids.length; i += 100) {
     const batch = ids.slice(i, i + 100).join(',');
     const data = await spotifyFetch(`/audio-features?ids=${batch}`);
-    if (data?.audio_features) features = features.concat(data.audio_features);
+    if (data?.audio_features) {
+      data.audio_features.forEach((f, j) => { features[i + j] = f; });
+    }
   }
 
   // Merge
@@ -892,10 +922,10 @@ function buildWorld() {
     node.style.top = y + 'px';
     node.innerHTML = `
       <div class="node-inner">
-        <div class="node-key">${song.camelot}</div>
-        <div class="node-title">${song.title}</div>
-        <div class="node-artist">${song.artist}</div>
-        <div class="node-bpm">${song.bpm} BPM</div>
+        <div class="node-key">${escapeHtml(song.camelot)}</div>
+        <div class="node-title">${escapeHtml(song.title)}</div>
+        <div class="node-artist">${escapeHtml(song.artist)}</div>
+        <div class="node-bpm">${escapeHtml(song.bpm)} BPM</div>
       </div>
     `;
     node.onclick = () => selectSong(song.id);
@@ -990,7 +1020,9 @@ function drawConnections(selected, compatible) {
 
 // ── DETAIL PANEL ──
 function showDetailPanel(song, compatible) {
-  document.getElementById('detail-art').src = song.art || '';
+  const detailArt = document.getElementById('detail-art');
+  detailArt.src = song.art || '';
+  detailArt.style.display = song.art ? '' : 'none';
   document.getElementById('detail-title').textContent = song.title;
   document.getElementById('detail-artist').textContent = song.artist;
   document.getElementById('detail-key').textContent = `${song.camelot} · ${song.keyName}`;
@@ -1018,10 +1050,7 @@ function showDetailPanel(song, compatible) {
 
 // ── PAN & ZOOM ──
 function resetView() {
-  worldX = window.innerWidth / 2 - window.innerWidth / 2;
-  worldY = window.innerHeight / 2 - window.innerHeight / 2;
-  worldScale = 1;
-  worldX = 0; worldY = 0;
+  worldX = 0; worldY = 0; worldScale = 1;
   applyTransform();
 }
 
@@ -1085,7 +1114,12 @@ canvas.addEventListener('touchmove', e => {
     );
     if (lastTouchDist) {
       const delta = d / lastTouchDist;
-      worldScale = Math.min(Math.max(worldScale * delta, 0.2), 3);
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const newScale = Math.min(Math.max(worldScale * delta, 0.2), 3);
+      worldX = midX - (midX - worldX) * (newScale / worldScale);
+      worldY = midY - (midY - worldY) * (newScale / worldScale);
+      worldScale = newScale;
       applyTransform();
     }
     lastTouchDist = d;
