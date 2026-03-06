@@ -828,17 +828,21 @@ async function spotifyFetch(endpoint, { silent = false } = {}) {
     showToast(`Rate limited by Spotify. Retry in ${retryAfter}s`);
     return null;
   }
+  let body = null;
+  try { body = await res.json(); } catch {}
   if (!res.ok) {
-    if (!silent) showToast(`Spotify API error: ${res.status}`);
+    if (res.status === 403) {
+      // 403 on tracks endpoint = force re-auth
+      sessionStorage.removeItem('spotify_token');
+      showToast(`Accesso negato (403): ${body?.error?.message || 'rieffettua il login'}`, 5000);
+      setTimeout(showLoginScreen, 1500);
+      return null;
+    }
+    if (!silent) showToast(`Spotify API error: ${res.status} — ${body?.error?.message || ''}`);
     return null;
   }
   if (res.status === 204) return null;
-  try {
-    return await res.json();
-  } catch {
-    if (!silent) showToast('Unexpected response from Spotify.');
-    return null;
-  }
+  return body;
 }
 
 // ── GETSONGBPM INTEGRATION ──
