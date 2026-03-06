@@ -992,7 +992,7 @@ async function loadPlaylist(playlistId, playlistName) {
   
   // Fetch all tracks
   let tracks = [];
-  let url = `/playlists/${playlistId}/tracks?limit=100&fields=next,items(track(id,name,artists,album,duration_ms))`;
+  let url = `/playlists/${playlistId}/tracks?limit=100`;
   while (url) {
     const data = await spotifyFetch(url);
     if (!data) {
