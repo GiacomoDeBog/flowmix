@@ -1026,6 +1026,12 @@ async function loadPlaylist(playlistId, playlistName) {
         keyName: r.keyName,
       };
     }).filter(Boolean);
+
+    if (songs.length === 0) {
+      showToast('GetSongBPM: nessuna traccia trovata. Controlla la API key o riprova.', 5000);
+      showPlaylistScreen();
+      return;
+    }
   } else {
     // ── PATH B: Spotify audio-features ──
     const ids = tracks.map(t => t.id);
